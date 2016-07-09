@@ -1,10 +1,11 @@
 require 'nokogiri'
 require 'http'
 require 'highline/import'
+require 'pry-byebug'
 
-$cookies = Hash.new()
+$cookies = {}
 
-def sucess?(response)
+def success?(response)
   (200...300).cover? response.code
 end
 
@@ -19,11 +20,23 @@ def login(username, password)
     form: { username: username, password: password, Submit: 'login' }
   )
   response = perform_login_redirect(login_response.to_s)
-  if sucess?(response)
+  if success?(response)
     puts 'Login successful'
     return login_response.headers['Set-Cookie']
   else
     puts "Login failed with #{response.code}"
+  end
+end
+
+def get_courses_page
+  response = HTTP.cookies($cookies).get(
+    'https://culearn.carleton.ca/moodle/my/'
+  )
+  if success?(response)
+    puts 'Courses page fetched'
+    return Nokogiri::HTML(response.to_s)
+  else
+    puts "Fetch failed with Code: #{response.code} Data: #{response}"
   end
 end
 
@@ -32,7 +45,7 @@ def get_grade_report(course_id)
     'https://culearn.carleton.ca/moodle/grade/report/user/index.php',
     params: { id: course_id }
   )
-  if sucess?(response)
+  if success?(response)
     puts 'Grade report fetched'
     return Nokogiri::HTML(response.to_s)
   else
@@ -42,27 +55,29 @@ end
 
 ####### Program Start ##########
 
-# username = '' # get from user
-# password = '' # get from user
-# course_id = 65_701 # get from user
-
 username = ask('Username: ')
 password = ask('Password: ') { |q| q.echo = false }
-course_id = ask('Course id: ')
+# num_semesters = ask('# Semesters: ')
 
 puts 'Start scrape'
 set_cookies = login(username, password)
 set_cookies.each do |variable|
   x = variable.split(' ')[0].split('=')
-  if x[0].eql? 'MoodleSession'
-    $cookies[x[0]] = x[1].chomp(';')
-  end
+  $cookies[x[0]] = x[1].chomp(';') if x[0].eql? 'MoodleSession'
 end
-grade_page = get_grade_report(course_id)
-puts ' Name    Grade    Range'
-grade_page.css('.generaltable.user-grade tbody tr').each do |grade_item|
-  print grade_item.css('th.column-itemname').text + ' '
-  print grade_item.css('td.column-grade').text + ' '
-  puts grade_item.css('td.column-range').text
+courses = []
+courses_page = get_courses_page
+courses_page.css('.courses .course').each do |course|
+  # binding.pry
+  courses.push course.css('a')[0]['href'].split('?id=')[1] # get id from url params
+end
+courses.each do |course_id|
+  grade_page = get_grade_report(course_id)
+  puts ' Name    Grade    Range'
+  grade_page.css('.generaltable.user-grade tbody tr').each do |grade_item|
+    print grade_item.css('th.column-itemname').text + ' '
+    print grade_item.css('td.column-grade').text + ' '
+    puts grade_item.css('td.column-range').text
+  end
 end
 puts 'Finish scrape'
