@@ -1,11 +1,15 @@
 require 'nokogiri'
 require 'http'
+require 'timeout'
 require 'highline/import'
 require 'pry-byebug'
 
 # CONSTANTS #
 CULEARN_HYPHEN = '–'.freeze # this is a different hyphen than a regular one
                             # had to copy and paste from CULearn
+ITEM_MAX_WIDTH = 40 # width of output column for grade item name
+LOGIN_TIMEOUT = 5 # if server is up, should take less than 2 seconds
+
 
 # GLOBAL #
 $cookies = {}
@@ -25,16 +29,24 @@ end
 
 def login
   login_success = false
+  login_response = {}
   until login_success
     username = ask('Username: ')
     password = ask('Password: ') { |q| q.echo = false }
     puts "Attempting to log into CULearn as user [ #{username} ]"
-    login_response = HTTP.post(
-      'https://culearn.carleton.ca/moodle/login/index.php',
-      form: { username: username, password: password, Submit: 'login' }
-    )
+    begin
+      Timeout.timeout(LOGIN_TIMEOUT) do
+        login_response = HTTP.post(
+          'https://culearn.carleton.ca/moodle/login/index.php',
+          form: { username: username, password: password, Submit: 'login' }
+        )
+      end
+    rescue Timeout::Error
+      puts 'Could not reach the CULearn server. It is probably down.'
+      return :abort
+    end
     response = perform_login_redirect(login_response.to_s)
-    login_success = success?(response)
+    login_success = login_success?(response)
     puts login_success ? 'Login successful' : 'Login failed. Please try again.'
   end
   return login_response.headers['Set-Cookie'] if login_success
@@ -70,13 +82,12 @@ end
 
 
 # num_semesters = ask('# Semesters: ')
-item_max_width = 40 # width of output column for grade item name
 
 puts 'CULearn Grade Scraper'
 set_cookies = login
 if set_cookies == :abort
-  puts 'Aborting'
-  return
+  puts 'Aborted.'
+  abort
 end
 set_cookies.each do |variable|
   x = variable.split(' ')[0].split('=')
@@ -101,10 +112,10 @@ courses.each do |course_id|
     next if grade_item.css('th.column-itemname').to_s.strip == '' # if CULearn has an empty tr for some reason
     if i.zero?
       puts "\nCourse: " + grade_item.css('th.column-itemname').text
-      printf "%-#{item_max_width}s %s\n", 'Name', 'Grade'
+      printf "%-#{ITEM_MAX_WIDTH}s %s\n", 'Name', 'Grade'
     else
       name = grade_item.css('th.column-itemname').text
-      printf "%-#{item_max_width}s", name[0..item_max_width-2]
+      printf "%-#{ITEM_MAX_WIDTH}s", name[0..ITEM_MAX_WIDTH-2]
       print grade_item.css('td.column-grade').text
       range = grade_item.css('td.column-range').text
       if range.strip != ''
