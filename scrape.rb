@@ -8,7 +8,7 @@ require 'pry-byebug'
 # CONSTANTS #
 CULEARN_HYPHEN = '–'.freeze # this is a different hyphen than a regular one, had to copy and paste from CULearn
 ITEM_MAX_WIDTH = 40 # width of output column for grade item name
-LOGIN_TIMEOUT = 20 # if server is up, should take less than 2 seconds. CULearn can be really slow sometimes though.
+LOGIN_TIMEOUT = 20 # CULearn is terribly inconsistent, and sometimes even slower than 20s for a response
 
 # GLOBAL #
 $cookies = {}
@@ -100,24 +100,23 @@ end
 puts 'Displaying grades'
 puts ''
 
-results = {} # empty hash, will fill in loop below
+results = { courses: [] } # empty array, will fill in loop below
 # format:
-# results: {
-#   course_id: {
+# results: [
+#   {
 #     name: "",
-#     code: "",
-#     items: {
-#       item_id: {
+#     culearn_id: "",
+#     items: [
+#       {
 #         name: "",
 #         grade: "",
 #         max: ""
 #       }
-#     }
+#     ]
 #   }
-# }
-current_course_id = 0
+# ]
+
 courses.each do |course_id|
-  current_item_id = 0
   grade_page = get_grade_report(course_id)
   if grade_page.xpath('//text()').to_s.include? 'Grader report'
     puts 'TA course: skipped'
@@ -125,11 +124,12 @@ courses.each do |course_id|
     next
   end
   course_name = '' # visible throughout loop
+  new_course = { culearn_id: course_id, name: '', items: [] }
   grade_page.css('.generaltable.user-grade tbody tr').each_with_index do |grade_item, i|
     next if grade_item.css('th.column-itemname').to_s.strip == '' # if CULearn has an empty tr for some reason
     if i.zero?
       course_name = grade_item.css('th.column-itemname').text
-      results[current_course_id] = { name: course_name, items: {} }
+      new_course[:name] = course_name
       puts "\nCourse: " + course_name
       printf "%-#{ITEM_MAX_WIDTH}s %s\n", 'Name', 'Grade'
     else
@@ -146,12 +146,12 @@ courses.each do |course_id|
           print '/' + max
         end
       end
-      results[current_course_id][:items][current_item_id] = { name: name, grade: grade, max: max }
+      new_item = { name: name, grade: grade, max: max }
+      new_course[:items].push new_item
       puts ''
     end
-    current_item_id += 1
   end
-  current_course_id += 1
+  results[:courses].push new_course
   puts ''
 end
 
