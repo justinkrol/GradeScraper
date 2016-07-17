@@ -202,9 +202,9 @@ culearn_courses.each do |course_id|
   puts_course(new_course) if verbose_enabled
 end
 
-save_json = ask 'Output to json? (y/n)'
+save_json = ask 'Save to JSON file? (y/n)'
 if save_json.downcase.include? 'y'
-  json_filename = ask('Name of json file?').chomp '.json'
+  json_filename = ask('Name of JSON file?').chomp '.json'
   puts "Saving to #{json_filename}.json"
   File.open("#{json_filename}.json", 'w') do |file|
     file.write(JSON.pretty_generate(results))
